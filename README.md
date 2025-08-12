@@ -1,185 +1,223 @@
-# SGNL Job Template
+# Azure AD Disable User Action
 
-This repository provides a template for creating JavaScript jobs for the SGNL Job Service.
+This SGNL action disables a user account in Azure Active Directory by setting `accountEnabled` to false, preventing the user from signing in and accessing resources.
 
-## Quick Start
+## Overview
 
-1. **Use this template** to create a new repository
-2. **Clone** your new repository locally
-3. **Install dependencies**: `npm install`  
-4. **Modify** `src/script.mjs` with your job logic
-5. **Update** `metadata.yaml` with your job schema
-6. **Test locally**: `npm run dev`
-7. **Run tests**: `npm test`
-8. **Build**: `npm run build`
-9. **Release**: Create a git tag and push
+The Azure AD Disable User action integrates with Microsoft Graph API to disable user accounts in your Azure AD tenant. This is commonly used in automated workflows for offboarding, security incidents, or compliance-driven account management.
+
+## Prerequisites
+
+- Azure AD tenant with appropriate permissions
+- Service principal or application with `User.ReadWrite.All` permission
+- Azure AD access token (Bearer token)
+
+## Configuration
+
+### Secrets
+
+- `AZURE_AD_TOKEN` (required): Bearer token for Microsoft Graph API authentication
+
+### Environment Variables
+
+- `AZURE_AD_TENANT_URL` (optional): Custom Microsoft Graph API endpoint. Defaults to `https://graph.microsoft.com/v1.0`
+
+### Input Parameters
+
+- `userPrincipalName` (required): The user principal name (UPN) of the user to disable (e.g., "user@example.com")
+
+### Output Schema
+
+```json
+{
+  "status": "success",
+  "userPrincipalName": "user@example.com", 
+  "accountEnabled": false
+}
+```
+
+## Usage Examples
+
+### Basic Usage
+
+```json
+{
+  "script_inputs": {
+    "userPrincipalName": "john.doe@company.com"
+  }
+}
+```
+
+### With Custom Tenant URL
+
+```json
+{
+  "environment": {
+    "AZURE_AD_TENANT_URL": "https://graph.microsoft.com/beta"
+  },
+  "script_inputs": {
+    "userPrincipalName": "user@company.com"
+  }
+}
+```
+
+## API Integration
+
+This action uses the Microsoft Graph API PATCH endpoint:
+
+```
+PATCH /users/{userPrincipalName}
+Content-Type: application/json
+Authorization: Bearer {token}
+
+{
+  "accountEnabled": false
+}
+```
+
+### Response Handling
+
+- **204 No Content**: Standard success response (account disabled successfully)
+- **200 OK**: Success with response body containing user details
+- **400 Bad Request**: Invalid request or user not found
+- **401 Unauthorized**: Invalid or expired token
+- **403 Forbidden**: Insufficient permissions
+- **429 Too Many Requests**: Rate limiting (automatically retried)
+
+## Error Handling
+
+The action implements comprehensive error handling with automatic retry logic:
+
+### Retryable Errors
+
+- **429 Too Many Requests**: Rate limiting - automatically retried with backoff
+- **502 Bad Gateway**: Temporary server issue - automatically retried
+- **503 Service Unavailable**: Service temporarily down - automatically retried  
+- **504 Gateway Timeout**: Request timeout - automatically retried
+
+### Fatal Errors (No Retry)
+
+- **401 Unauthorized**: Invalid authentication credentials
+- **403 Forbidden**: Insufficient permissions  
+- **400 Bad Request**: Invalid user principal name or request format
+
+### Error Handler
+
+The action includes an error handler that:
+- Classifies errors as retryable vs fatal
+- Automatically retries temporary failures
+- Prevents retry loops for authentication/permission errors
+- Logs error details for troubleshooting
+
+## Security Considerations
+
+- User principal names are URL-encoded to prevent injection attacks
+- Bearer tokens are handled securely and never logged
+- Token prefix is automatically added if not present
+- All API calls use HTTPS encryption
+- No sensitive data is included in log outputs
+
+## Testing
+
+Run the test suite to verify functionality:
+
+```bash
+# Run all tests
+npm test
+
+# Run with coverage report  
+npm run test:coverage
+
+# Run specific test
+npm test -- --testNamePattern="disable user successfully"
+```
+
+### Test Coverage
+
+Tests cover:
+- Successful user disabling (204 and 200 responses)
+- URL encoding for special characters in UPNs
+- Bearer token prefix handling
+- Input validation and error cases
+- Retry logic for different error types
+- Response parsing and field handling
 
 ## Development
 
 ### Local Testing
 
 ```bash
-# Run the script locally with mock data
-npm run dev
+# Test with sample parameters
+npm run dev -- --params '{"userPrincipalName": "test@example.com"}'
 
-# Run unit tests
-npm test
-
-# Watch mode for development
+# Watch mode during development
 npm run test:watch
-npm run build:watch
+```
 
-# Validate metadata
-npm run validate
+### Build Process
 
+```bash
 # Lint code
 npm run lint
-npm run lint:fix
+
+# Build distribution bundle
+npm run build
+
+# Validate configuration
+npm run validate
 ```
 
-### File Structure
+## Troubleshooting
 
-- `src/script.mjs` - Main job implementation (⚠️ **Edit this!**)
-- `metadata.yaml` - Job schema and configuration (⚠️ **Edit this!**)
-- `tests/script.test.js` - Unit tests
-- `dist/index.js` - Built script (generated by `npm run build`)
-- `scripts/` - Development utilities
+### Common Issues
 
-## Implementation Checklist
+**"userPrincipalName is required"**
+- Ensure the input parameter is provided and not empty
 
-### Required Changes
+**"AZURE_AD_TOKEN secret is required"**
+- Verify the secret is configured in your environment
+- Check token has not expired
 
-- [ ] **Update job name** and description in `metadata.yaml`
-- [ ] **Define input parameters** in `metadata.yaml` 
-- [ ] **Define output schema** in `metadata.yaml`
-- [ ] **Implement `invoke` handler** in `src/script.mjs`
-- [ ] **Update test mock data** in `tests/script.test.js`
-- [ ] **Update README** with job-specific documentation
+**"Failed to disable user: 401 Unauthorized"**
+- Token may be expired or invalid
+- Verify service principal has correct permissions
 
-### Optional Enhancements
+**"Failed to disable user: 403 Forbidden"**
+- Service principal lacks `User.ReadWrite.All` permission
+- Check Azure AD role assignments
 
-- [ ] Implement `error` handler for error recovery
-- [ ] Implement `halt` handler for graceful shutdown
-- [ ] Add additional test cases
-- [ ] Customize development runner in `scripts/dev-runner.js`
+**"Failed to disable user: 400 Bad Request"**
+- User principal name may be invalid or user doesn't exist
+- Verify UPN format (user@domain.com)
 
-## Event Handlers
+### Debugging
 
-Your script must export a default object with these handlers:
-
-### `invoke` (Required)
-Main execution logic for your job.
-
-```javascript
-invoke: async (params, context) => {
-  // Your job logic here
-  return {
-    status: 'success',
-    // ... other outputs
-  };
-}
-```
-
-### `error` (Optional)
-Error recovery logic when `invoke` fails.
-
-```javascript
-error: async (params, context) => {
-  // params.error contains the original error
-  // Attempt recovery or cleanup
-  return {
-    status: 'recovered',
-    // ... recovery results
-  };
-}
-```
-
-### `halt` (Optional)  
-Graceful shutdown when job is cancelled or times out.
-
-```javascript
-halt: async (params, context) => {
-  // params.reason contains halt reason
-  // Clean up resources, save partial progress
-  return {
-    status: 'halted',
-    cleanup_completed: true
-  };
-}
-```
-
-## Context Object
-
-The `context` parameter provides access to:
-
-```javascript
-{
-  env: {
-    ENVIRONMENT: "production",
-    // ... other environment variables
-  },
-  secrets: {
-    API_KEY: "secret-key",
-    // ... other secrets
-  },
-  outputs: {
-    "previous-job-step": {
-      // ... outputs from previous jobs in workflow
-    }
-  }
-}
-```
-
-## Testing
-
-### Unit Tests
-
-Tests are in `tests/script.test.js`. Update the mock data to match your job's inputs:
-
-```javascript
-const params = {
-  target: 'your-target',
-  action: 'your-action'
-  // ... other inputs
-};
-```
-
-### Local Development
-
-Use `npm run dev` to test your script locally with mock data. Update `scripts/dev-runner.js` to customize the test parameters.
-
-## Deployment
-
-1. **Ensure tests pass**: `npm test`
-2. **Validate metadata**: `npm run validate`  
-3. **Build distribution**: `npm run build`
-4. **Create git tag**: `git tag v1.0.0`
-5. **Push to GitHub**: `git push origin v1.0.0`
-
-## Usage in SGNL
-
-Reference your job in a JobSpec:
-
+Enable debug logging by setting:
 ```json
 {
-  "id": "my-job-123",
-  "type": "nodejs-20",
-  "script": {
-    "repository": "github.com/your-org/your-job-repo",
-    "version": "v1.0.0",
-    "type": "nodejs"
-  },
-  "script_inputs": {
-    "target": "user@example.com",
-    "action": "create"
-  },
   "environment": {
-    "ENVIRONMENT": "production"
+    "LOG_LEVEL": "debug"
   }
 }
 ```
 
-## Support
+## API Reference
 
-- [Job Development Guide](https://github.com/SGNL-ai/job_service/blob/main/docs/JAVASCRIPT_JOB_DEVELOPMENT.md)
-- [SGNL Job Service](https://github.com/SGNL-ai/job_service)
+### Microsoft Graph API Documentation
+
+- [Update User](https://docs.microsoft.com/en-us/graph/api/user-update)
+- [User Resource Type](https://docs.microsoft.com/en-us/graph/api/resources/user)
+- [Permissions Reference](https://docs.microsoft.com/en-us/graph/permissions-reference)
+
+### Required Graph API Permissions
+
+- `User.ReadWrite.All`: Required to modify user account enabled status
+
+## Changelog
+
+### v1.0.0
+- Initial release with Azure AD user account disabling
+- Support for Microsoft Graph API v1.0
+- Comprehensive error handling and retry logic
+- URL encoding and security features
+- Full test coverage

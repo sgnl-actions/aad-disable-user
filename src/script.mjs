@@ -1,100 +1,134 @@
 /**
- * SGNL Job Template
+ * Azure AD Disable User Action
  *
- * This template provides a starting point for implementing SGNL jobs.
- * Replace this implementation with your specific business logic.
+ * Disables a user account in Azure Active Directory by setting accountEnabled to false.
+ * This prevents the user from signing in and accessing resources.
  */
+
+/**
+ * Helper function to disable a user account
+ * @param {string} userPrincipalName - The user principal name
+ * @param {string} tenantUrl - Azure AD tenant URL
+ * @param {string} authToken - Azure AD access token
+ * @returns {Promise<Object>} API response
+ */
+async function disableUserAccount(userPrincipalName, tenantUrl, authToken) {
+  // URL encode the user principal name to prevent injection
+  const encodedUpn = encodeURIComponent(userPrincipalName);
+  const url = new URL(`${tenantUrl}/users/${encodedUpn}`);
+
+  // Ensure token has proper Bearer prefix
+  const authHeader = authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+
+  const response = await fetch(url.toString(), {
+    method: 'PATCH',
+    headers: {
+      'Authorization': authHeader,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      accountEnabled: false
+    })
+  });
+
+  return response;
+}
 
 export default {
   /**
-   * Main execution handler - implement your job logic here
+   * Main execution handler - disables the specified user account
    * @param {Object} params - Job input parameters
    * @param {Object} context - Execution context with env, secrets, outputs
    * @returns {Object} Job results
    */
   invoke: async (params, context) => {
-    console.log('Starting job execution');
-    console.log(`Processing target: ${params.target}`);
-    console.log(`Action: ${params.action}`);
-
-    // TODO: Replace with your implementation
-    const { target, action, options = [], dry_run = false } = params;
-
-    if (dry_run) {
-      console.log('DRY RUN: No changes will be made');
+    // Validate required parameters
+    if (!params.userPrincipalName) {
+      throw new Error('userPrincipalName is required');
     }
 
-    // Access environment variables
-    const environment = context.env.ENVIRONMENT || 'development';
-    console.log(`Running in ${environment} environment`);
+    // Get configuration
+    const tenantUrl = context.environment?.AZURE_AD_TENANT_URL || 'https://graph.microsoft.com/v1.0';
+    const authToken = context.secrets?.AZURE_AD_TOKEN;
 
-    // Access secrets securely (example)
-    if (context.secrets.API_KEY) {
-      console.log(`Using API key ending in ...${context.secrets.API_KEY.slice(-4)}`);
+    if (!authToken) {
+      throw new Error('AZURE_AD_TOKEN secret is required');
     }
 
-    // Use outputs from previous jobs in workflow
-    if (context.outputs && Object.keys(context.outputs).length > 0) {
-      console.log(`Available outputs from ${Object.keys(context.outputs).length} previous jobs`);
-      console.log(`Previous job outputs: ${Object.keys(context.outputs).join(', ')}`);
+    console.log(`Disabling user account: ${params.userPrincipalName}`);
+
+    // Call Azure AD API to disable the account
+    const response = await disableUserAccount(
+      params.userPrincipalName,
+      tenantUrl,
+      authToken
+    );
+
+    // Check response status
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to disable user: ${response.status} ${response.statusText}. Details: ${errorText}`);
     }
 
-    // TODO: Implement your business logic here
-    console.log(`Performing ${action} on ${target}...`);
-
-    if (options.length > 0) {
-      console.log(`Processing ${options.length} options: ${options.join(', ')}`);
+    // For PATCH operations, a 204 No Content is success
+    let accountEnabled = false;
+    if (response.status !== 204) {
+      // If there's a response body, parse it
+      const result = await response.json();
+      accountEnabled = result.accountEnabled ?? false;
     }
 
-    console.log(`Successfully completed ${action} on ${target}`);
+    console.log(`Successfully disabled user account: ${params.userPrincipalName}`);
 
-    // Return structured results
     return {
-      status: dry_run ? 'dry_run_completed' : 'success',
-      target: target,
-      action: action,
-      options_processed: options.length,
-      environment: environment,
-      processed_at: new Date().toISOString()
-      // Job completed successfully
+      status: 'success',
+      userPrincipalName: params.userPrincipalName,
+      accountEnabled: accountEnabled
     };
   },
 
   /**
-   * Error recovery handler - implement error handling logic
+   * Error recovery handler - handles retryable errors
    * @param {Object} params - Original params plus error information
    * @param {Object} context - Execution context
    * @returns {Object} Recovery results
    */
   error: async (params, _context) => {
-    const { error, target } = params;
-    console.error(`Job encountered error while processing ${target}: ${error.message}`);
+    const { error } = params;
 
-    // TODO: Implement your error recovery logic
-    // Example: Check if error is retryable and attempt recovery
+    // Check for rate limiting (429) or temporary server errors (502, 503, 504)
+    if (error.message.includes('429') ||
+        error.message.includes('502') ||
+        error.message.includes('503') ||
+        error.message.includes('504')) {
+      console.log('Retryable error detected, requesting retry...');
+      return { status: 'retry_requested' };
+    }
 
-    // For now, just throw the error - implement your logic here
-    throw new Error(`Unable to recover from error: ${error.message}`);
+    // Fatal errors (401, 403) should not retry
+    if (error.message.includes('401') || error.message.includes('403')) {
+      throw new Error(error.message); // Re-throw to mark as fatal
+    }
+
+    // Default: let framework retry
+    return { status: 'retry_requested' };
   },
 
   /**
-   * Graceful shutdown handler - implement cleanup logic
+   * Graceful shutdown handler - cleanup on halt
    * @param {Object} params - Original params plus halt reason
    * @param {Object} context - Execution context
    * @returns {Object} Cleanup results
    */
   halt: async (params, _context) => {
-    const { reason, target } = params;
-    console.log(`Job is being halted (${reason}) while processing ${target}`);
-
-    // TODO: Implement your cleanup logic
-    // Example: Save partial results, close connections, etc.
+    const { reason } = params;
+    console.log(`User disable operation halted: ${reason}`);
 
     return {
       status: 'halted',
-      target: target || 'unknown',
-      reason: reason,
-      halted_at: new Date().toISOString()
+      userPrincipalName: params.userPrincipalName || 'unknown',
+      reason: reason
     };
   }
 };

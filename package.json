@@ -1,7 +1,7 @@
 {
-  "name": "@sgnl/job-template",
+  "name": "@sgnl-actions/aad-disable-user",
   "version": "1.0.0",
-  "description": "Template for SGNL JavaScript jobs",
+  "description": "Disable a user account in Azure Active Directory",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

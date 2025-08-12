@@ -1,37 +1,27 @@
-name: job-template
-description: Template for SGNL JavaScript jobs - replace with your job description
+name: aad-disable-user
+description: Disable a user account in Azure Active Directory
 
 # Input parameters for web form generation
 inputs:
-  target:
+  userPrincipalName:
     type: text
-    description: Target resource identifier (e.g., user email, group ID)
+    description: The user principal name (UPN) of the user to disable
     required: true
     validation:
       min: 1
-      max: 100
+      max: 255
 
-  action:
-    type: text
-    description: Action to perform on the target resource
+# Secrets required from context
+secrets:
+  AZURE_AD_TOKEN:
+    description: Azure AD access token with User.ReadWrite.All permission
     required: true
-    validation:
-      min: 1
-      max: 50
 
-  options:
-    type: array
-    description: Additional options for the operation
-    required: false
-    item_type: text
-    validation:
-      max: 10
-
-  dry_run:
-    type: boolean
-    description: Preview changes without executing them
-    required: false
-    default: false
+# Environment variables
+environment:
+  AZURE_AD_TENANT_URL:
+    description: Azure AD tenant URL (e.g., https://graph.microsoft.com/v1.0)
+    default: https://graph.microsoft.com/v1.0
 
 # Expected output structure
 outputs:
@@ -39,10 +29,10 @@ outputs:
     type: text
     description: Operation result (success, failed, recovered, etc.)
 
-  target:
+  userPrincipalName:
     type: text
-    description: The target resource that was processed
+    description: The user principal name that was disabled
 
-  processed_at:
-    type: datetime
-    description: When the operation completed (ISO 8601)
+  accountEnabled:
+    type: boolean
+    description: The account enabled status (should be false)
