@@ -16,7 +16,7 @@ The Azure AD Disable User action integrates with Microsoft Graph API to disable 
 
 ### Secrets
 
-- `AZURE_AD_TOKEN` (required): Bearer token for Microsoft Graph API authentication
+- `BEARER_AUTH_TOKEN` (required): Bearer token for Azure AD API authentication
 
 ### Environment Variables
 
@@ -174,7 +174,7 @@ npm run validate
 **"userPrincipalName is required"**
 - Ensure the input parameter is provided and not empty
 
-**"AZURE_AD_TOKEN secret is required"**
+**"BEARER_AUTH_TOKEN secret is required"**
 - Verify the secret is configured in your environment
 - Check token has not expired
 

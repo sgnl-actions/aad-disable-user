@@ -11,7 +11,7 @@ describe('Azure AD Disable User Action', () => {
       AZURE_AD_TENANT_URL: 'https://graph.microsoft.com/v1.0'
     },
     secrets: {
-      AZURE_AD_TOKEN: 'test-access-token-12345'
+      BEARER_AUTH_TOKEN: 'test-access-token-12345'
     }
   };
 
@@ -127,7 +127,7 @@ describe('Azure AD Disable User Action', () => {
       const contextWithBearerToken = {
         ...mockContext,
         secrets: {
-          AZURE_AD_TOKEN: 'Bearer existing-bearer-token'
+          BEARER_AUTH_TOKEN: 'Bearer existing-bearer-token'
         }
       };
 
@@ -153,7 +153,7 @@ describe('Azure AD Disable User Action', () => {
       const contextWithoutUrl = {
         environment: {},
         secrets: {
-          AZURE_AD_TOKEN: 'test-token'
+          BEARER_AUTH_TOKEN: 'test-token'
         }
       };
 
@@ -184,7 +184,7 @@ describe('Azure AD Disable User Action', () => {
         .toThrow('userPrincipalName is required');
     });
 
-    test('should throw error when AZURE_AD_TOKEN is missing', async () => {
+    test('should throw error when BEARER_AUTH_TOKEN is missing', async () => {
       const contextWithoutToken = {
         environment: mockContext.environment,
         secrets: {}
@@ -196,7 +196,7 @@ describe('Azure AD Disable User Action', () => {
 
       await expect(script.invoke(params, contextWithoutToken))
         .rejects
-        .toThrow('AZURE_AD_TOKEN secret is required');
+        .toThrow('BEARER_AUTH_TOKEN secret is required');
     });
 
     test('should handle API error responses', async () => {
