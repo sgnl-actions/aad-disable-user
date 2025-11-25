@@ -8,19 +8,22 @@
 /**
  * Helper function to disable a user account
  * @param {string} userPrincipalName - The user principal name
- * @param {string} tenantUrl - Azure AD tenant URL
+ * @param {string} address - Azure AD base URL
  * @param {string} authToken - Azure AD access token
  * @returns {Promise<Object>} API response
  */
-async function disableUserAccount(userPrincipalName, tenantUrl, authToken) {
+async function disableUserAccount(userPrincipalName, address, authToken) {
+  // Remove trailing slash from address if present
+  const cleanAddress = address.endsWith('/') ? address.slice(0, -1) : address;
+
   // URL encode the user principal name to prevent injection
   const encodedUpn = encodeURIComponent(userPrincipalName);
-  const url = new URL(`${tenantUrl}/users/${encodedUpn}`);
+  const url = `${cleanAddress}/v1.0/users/${encodedUpn}`;
 
   // Ensure token has proper Bearer prefix
   const authHeader = authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
 
-  const response = await fetch(url.toString(), {
+  const response = await fetch(url, {
     method: 'PATCH',
     headers: {
       'Authorization': authHeader,
@@ -39,7 +42,10 @@ export default {
   /**
    * Main execution handler - disables the specified user account
    * @param {Object} params - Job input parameters
+   * @param {string} params.userPrincipalName - User Principal Name (email) to disable
+   * @param {string} params.address - The Azure AD API base URL (e.g., https://graph.microsoft.com)
    * @param {Object} context - Execution context with env, secrets, outputs
+   * @param {string} context.environment.ADDRESS - Default Azure AD API base URL
    * @param {string} context.secrets.BEARER_AUTH_TOKEN - Bearer token for Azure AD API authentication
    * @returns {Object} Job results
    */
@@ -49,8 +55,12 @@ export default {
       throw new Error('userPrincipalName is required');
     }
 
-    // Get configuration
-    const tenantUrl = context.environment?.AZURE_AD_TENANT_URL || 'https://graph.microsoft.com/v1.0';
+    // Determine the URL to use
+    const address = params.address || context.environment?.ADDRESS;
+    if (!address) {
+      throw new Error('No URL specified. Provide either address parameter or ADDRESS environment variable');
+    }
+
     const authToken = context.secrets?.BEARER_AUTH_TOKEN;
 
     if (!authToken) {
@@ -62,7 +72,7 @@ export default {
     // Call Azure AD API to disable the account
     const response = await disableUserAccount(
       params.userPrincipalName,
-      tenantUrl,
+      address,
       authToken
     );
 
