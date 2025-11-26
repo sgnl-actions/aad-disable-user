@@ -6,13 +6,73 @@
  */
 
 /**
+ * Get OAuth2 access token using client credentials flow
+ * @param {Object} config - OAuth2 configuration
+ * @returns {Promise<string>} Access token
+ */
+async function getClientCredentialsToken(config) {
+  const { tokenUrl, clientId, clientSecret, scope, audience, authStyle } = config;
+
+  const params = new URLSearchParams();
+  params.append('grant_type', 'client_credentials');
+
+  if (scope) {
+    params.append('scope', scope);
+  }
+
+  if (audience) {
+    params.append('audience', audience);
+  }
+
+  const headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Accept': 'application/json'
+  };
+
+  if (authStyle === 'InParams') {
+    params.append('client_id', clientId);
+    params.append('client_secret', clientSecret);
+  } else {
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    headers['Authorization'] = `Basic ${credentials}`;
+  }
+
+  const response = await fetch(tokenUrl, {
+    method: 'POST',
+    headers,
+    body: params.toString()
+  });
+
+  if (!response.ok) {
+    let errorText;
+    try {
+      const errorData = await response.json();
+      errorText = JSON.stringify(errorData);
+    } catch {
+      errorText = await response.text();
+    }
+    throw new Error(
+      `OAuth2 token request failed: ${response.status} ${response.statusText} - ${errorText}`
+    );
+  }
+
+  const data = await response.json();
+
+  if (!data.access_token) {
+    throw new Error('No access_token in OAuth2 response');
+  }
+
+  return data.access_token;
+}
+
+/**
  * Helper function to disable a user account
  * @param {string} userPrincipalName - The user principal name
  * @param {string} address - Azure AD base URL
- * @param {string} authToken - Azure AD access token
+ * @param {string} accessToken - OAuth2 access token
  * @returns {Promise<Object>} API response
  */
-async function disableUserAccount(userPrincipalName, address, authToken) {
+async function disableUserAccount(userPrincipalName, address, accessToken) {
   // Remove trailing slash from address if present
   const cleanAddress = address.endsWith('/') ? address.slice(0, -1) : address;
 
@@ -21,7 +81,7 @@ async function disableUserAccount(userPrincipalName, address, authToken) {
   const url = `${cleanAddress}/v1.0/users/${encodedUpn}`;
 
   // Ensure token has proper Bearer prefix
-  const authHeader = authToken.startsWith('Bearer ') ? authToken : `Bearer ${authToken}`;
+  const authHeader = accessToken.startsWith('Bearer ') ? accessToken : `Bearer ${accessToken}`;
 
   const response = await fetch(url, {
     method: 'PATCH',
@@ -46,7 +106,30 @@ export default {
    * @param {string} params.address - The Azure AD API base URL (e.g., https://graph.microsoft.com)
    * @param {Object} context - Execution context with env, secrets, outputs
    * @param {string} context.environment.ADDRESS - Default Azure AD API base URL
-   * @param {string} context.secrets.BEARER_AUTH_TOKEN - Bearer token for Azure AD API authentication
+   *
+   * The configured auth type will determine which of the following environment variables and secrets are available
+   * @param {string} context.secrets.OAUTH2_CLIENT_CREDENTIALS_CLIENT_SECRET
+   * @param {string} context.environment.OAUTH2_CLIENT_CREDENTIALS_AUDIENCE
+   * @param {string} context.environment.OAUTH2_CLIENT_CREDENTIALS_AUTH_STYLE
+   * @param {string} context.environment.OAUTH2_CLIENT_CREDENTIALS_CLIENT_ID
+   * @param {string} context.environment.OAUTH2_CLIENT_CREDENTIALS_SCOPE
+   * @param {string} context.environment.OAUTH2_CLIENT_CREDENTIALS_TOKEN_URL
+   *
+   * @param {string} context.secrets.OAUTH2_AUTHORIZATION_CODE_ACCESS_TOKEN
+   * @param {string} context.secrets.OAUTH2_AUTHORIZATION_CODE_AUTHORIZATION_CODE
+   * @param {string} context.secrets.OAUTH2_AUTHORIZATION_CODE_CLIENT_SECRET
+   * @param {string} context.secrets.OAUTH2_AUTHORIZATION_CODE_REFRESH_TOKEN
+   * @param {string} context.environment.OAUTH2_AUTHORIZATION_CODE_AUTH_STYLE
+   * @param {string} context.environment.OAUTH2_AUTHORIZATION_CODE_AUTH_URL
+   * @param {string} context.environment.OAUTH2_AUTHORIZATION_CODE_CLIENT_ID
+   * @param {string} context.environment.OAUTH2_AUTHORIZATION_CODE_LAST_TOKEN_ROTATION_TIMESTAMP
+   * @param {string} context.environment.OAUTH2_AUTHORIZATION_CODE_REDIRECT_URI
+   * @param {string} context.environment.OAUTH2_AUTHORIZATION_CODE_SCOPE
+   * @param {string} context.environment.OAUTH2_AUTHORIZATION_CODE_TOKEN_LIFETIME_FREQUENCY
+   * @param {string} context.environment.OAUTH2_AUTHORIZATION_CODE_TOKEN_ROTATION_FREQUENCY
+   * @param {string} context.environment.OAUTH2_AUTHORIZATION_CODE_TOKEN_ROTATION_INTERVAL
+   * @param {string} context.environment.OAUTH2_AUTHORIZATION_CODE_TOKEN_URL
+   *
    * @returns {Object} Job results
    */
   invoke: async (params, context) => {
@@ -61,10 +144,29 @@ export default {
       throw new Error('No URL specified. Provide either address parameter or ADDRESS environment variable');
     }
 
-    const authToken = context.secrets?.BEARER_AUTH_TOKEN;
+    let accessToken;
 
-    if (!authToken) {
-      throw new Error('BEARER_AUTH_TOKEN secret is required');
+    if (context.secrets?.OAUTH2_AUTHORIZATION_CODE_ACCESS_TOKEN) {
+      accessToken = context.secrets.OAUTH2_AUTHORIZATION_CODE_ACCESS_TOKEN;
+    } else if (context.secrets?.OAUTH2_CLIENT_CREDENTIALS_CLIENT_SECRET) {
+      const tokenUrl = context.environment?.OAUTH2_CLIENT_CREDENTIALS_TOKEN_URL;
+      const clientId = context.environment?.OAUTH2_CLIENT_CREDENTIALS_CLIENT_ID;
+      const clientSecret = context.secrets.OAUTH2_CLIENT_CREDENTIALS_CLIENT_SECRET;
+
+      if (!tokenUrl || !clientId || !clientSecret) {
+        throw new Error('OAuth2 Client Credentials flow requires TOKEN_URL, CLIENT_ID, and CLIENT_SECRET');
+      }
+
+      accessToken = await getClientCredentialsToken({
+        tokenUrl,
+        clientId,
+        clientSecret,
+        scope: context.environment?.OAUTH2_CLIENT_CREDENTIALS_SCOPE,
+        audience: context.environment?.OAUTH2_CLIENT_CREDENTIALS_AUDIENCE,
+        authStyle: context.environment?.OAUTH2_CLIENT_CREDENTIALS_AUTH_STYLE
+      });
+    } else {
+      throw new Error('OAuth2 authentication is required. Configure either Authorization Code or Client Credentials flow.');
     }
 
     console.log(`Disabling user account: ${params.userPrincipalName}`);
@@ -73,7 +175,7 @@ export default {
     const response = await disableUserAccount(
       params.userPrincipalName,
       address,
-      authToken
+      accessToken
     );
 
     // Check response status
