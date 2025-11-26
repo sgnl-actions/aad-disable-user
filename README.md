@@ -204,10 +204,6 @@ npm run validate
 **"userPrincipalName is required"**
 - Ensure the input parameter is provided and not empty
 
-**"BEARER_AUTH_TOKEN secret is required"**
-- Verify the secret is configured in your environment
-- Check token has not expired
-
 **"Failed to disable user: 401 Unauthorized"**
 - Token may be expired or invalid
 - Verify service principal has correct permissions
