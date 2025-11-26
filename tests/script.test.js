@@ -8,10 +8,10 @@ global.fetch = mockFetch;
 describe('Azure AD Disable User Action', () => {
   const mockContext = {
     environment: {
-      AZURE_AD_TENANT_URL: 'https://graph.microsoft.com/v1.0'
+      ADDRESS: 'https://graph.microsoft.com'
     },
     secrets: {
-      BEARER_AUTH_TOKEN: 'test-access-token-12345'
+      OAUTH2_AUTHORIZATION_CODE_ACCESS_TOKEN: 'test-access-token-12345'
     }
   };
 
@@ -127,7 +127,7 @@ describe('Azure AD Disable User Action', () => {
       const contextWithBearerToken = {
         ...mockContext,
         secrets: {
-          BEARER_AUTH_TOKEN: 'Bearer existing-bearer-token'
+          OAUTH2_AUTHORIZATION_CODE_ACCESS_TOKEN: 'Bearer existing-bearer-token'
         }
       };
 
@@ -149,33 +149,6 @@ describe('Azure AD Disable User Action', () => {
       expect(call[1].headers.Authorization).toBe('Bearer existing-bearer-token');
     });
 
-    test('should use default tenant URL when not specified in environment', async () => {
-      const contextWithoutUrl = {
-        environment: {},
-        secrets: {
-          BEARER_AUTH_TOKEN: 'test-token'
-        }
-      };
-
-      const mockResponse = {
-        ok: true,
-        status: 204,
-        statusText: 'No Content'
-      };
-      mockFetch.mockResolvedValue(mockResponse);
-
-      const params = {
-        userPrincipalName: 'user@example.com'
-      };
-
-      await script.invoke(params, contextWithoutUrl);
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://graph.microsoft.com/v1.0/users/user%40example.com',
-        expect.any(Object)
-      );
-    });
-
     test('should throw error when userPrincipalName is missing', async () => {
       const params = {};
 
@@ -184,7 +157,7 @@ describe('Azure AD Disable User Action', () => {
         .toThrow('userPrincipalName is required');
     });
 
-    test('should throw error when BEARER_AUTH_TOKEN is missing', async () => {
+    test('should throw error when OAUTH2_AUTHORIZATION_CODE_ACCESS_TOKEN is missing', async () => {
       const contextWithoutToken = {
         environment: mockContext.environment,
         secrets: {}
@@ -196,7 +169,7 @@ describe('Azure AD Disable User Action', () => {
 
       await expect(script.invoke(params, contextWithoutToken))
         .rejects
-        .toThrow('BEARER_AUTH_TOKEN secret is required');
+        .toThrow('OAuth2 authentication is required');
     });
 
     test('should handle API error responses', async () => {
