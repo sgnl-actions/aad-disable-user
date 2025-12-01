@@ -169,7 +169,7 @@ describe('Azure AD Disable User Action', () => {
 
       await expect(script.invoke(params, contextWithoutToken))
         .rejects
-        .toThrow('OAuth2 authentication is required');
+        .toThrow('No authentication configured');
     });
 
     test('should handle API error responses', async () => {
