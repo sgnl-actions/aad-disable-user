@@ -8,16 +8,18 @@ global.fetch = mockFetch;
 describe('Azure AD Disable User Action', () => {
   const mockContext = {
     environment: {
-      AZURE_AD_TENANT_URL: 'https://graph.microsoft.com/v1.0'
+      ADDRESS: 'https://graph.microsoft.com'
     },
     secrets: {
-      AZURE_AD_TOKEN: 'test-access-token-12345'
+      OAUTH2_AUTHORIZATION_CODE_ACCESS_TOKEN: 'test-access-token-12345'
     }
   };
 
   beforeEach(() => {
     mockFetch.mockClear();
     jest.clearAllMocks();
+    global.console.log = jest.fn();
+    global.console.error = jest.fn();
   });
 
   describe('invoke handler', () => {
@@ -127,7 +129,7 @@ describe('Azure AD Disable User Action', () => {
       const contextWithBearerToken = {
         ...mockContext,
         secrets: {
-          AZURE_AD_TOKEN: 'Bearer existing-bearer-token'
+          OAUTH2_AUTHORIZATION_CODE_ACCESS_TOKEN: 'Bearer existing-bearer-token'
         }
       };
 
@@ -149,33 +151,6 @@ describe('Azure AD Disable User Action', () => {
       expect(call[1].headers.Authorization).toBe('Bearer existing-bearer-token');
     });
 
-    test('should use default tenant URL when not specified in environment', async () => {
-      const contextWithoutUrl = {
-        environment: {},
-        secrets: {
-          AZURE_AD_TOKEN: 'test-token'
-        }
-      };
-
-      const mockResponse = {
-        ok: true,
-        status: 204,
-        statusText: 'No Content'
-      };
-      mockFetch.mockResolvedValue(mockResponse);
-
-      const params = {
-        userPrincipalName: 'user@example.com'
-      };
-
-      await script.invoke(params, contextWithoutUrl);
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://graph.microsoft.com/v1.0/users/user%40example.com',
-        expect.any(Object)
-      );
-    });
-
     test('should throw error when userPrincipalName is missing', async () => {
       const params = {};
 
@@ -184,7 +159,7 @@ describe('Azure AD Disable User Action', () => {
         .toThrow('userPrincipalName is required');
     });
 
-    test('should throw error when AZURE_AD_TOKEN is missing', async () => {
+    test('should throw error when OAUTH2_AUTHORIZATION_CODE_ACCESS_TOKEN is missing', async () => {
       const contextWithoutToken = {
         environment: mockContext.environment,
         secrets: {}
@@ -196,7 +171,7 @@ describe('Azure AD Disable User Action', () => {
 
       await expect(script.invoke(params, contextWithoutToken))
         .rejects
-        .toThrow('AZURE_AD_TOKEN secret is required');
+        .toThrow('No authentication configured');
     });
 
     test('should handle API error responses', async () => {
@@ -268,88 +243,47 @@ describe('Azure AD Disable User Action', () => {
   });
 
   describe('error handler', () => {
-    test('should request retry for rate limiting (429)', async () => {
+    test('should re-throw error and let framework handle retries', async () => {
+      const errorObj = new Error('Failed to disable user: 429 Too Many Requests');
       const params = {
-        error: {
-          message: 'Failed to disable user: 429 Too Many Requests'
-        }
+        userPrincipalName: 'test@example.com',
+        error: errorObj
       };
 
-      const result = await script.error(params, mockContext);
-
-      expect(result.status).toBe('retry_requested');
+      await expect(script.error(params, mockContext)).rejects.toThrow(errorObj);
+      expect(console.error).toHaveBeenCalledWith(
+        'User disable failed for test@example.com: Failed to disable user: 429 Too Many Requests'
+      );
     });
 
-    test('should request retry for server errors (502)', async () => {
+    test('should re-throw server errors', async () => {
+      const errorObj = new Error('Failed to disable user: 502 Bad Gateway');
       const params = {
-        error: {
-          message: 'Failed to disable user: 502 Bad Gateway'
-        }
+        userPrincipalName: 'test@example.com',
+        error: errorObj
       };
 
-      const result = await script.error(params, mockContext);
-
-      expect(result.status).toBe('retry_requested');
+      await expect(script.error(params, mockContext)).rejects.toThrow(errorObj);
     });
 
-    test('should request retry for server errors (503)', async () => {
+    test('should re-throw authentication errors', async () => {
+      const errorObj = new Error('Failed to disable user: 401 Unauthorized');
       const params = {
-        error: {
-          message: 'Failed to disable user: 503 Service Unavailable'
-        }
+        userPrincipalName: 'test@example.com',
+        error: errorObj
       };
 
-      const result = await script.error(params, mockContext);
-
-      expect(result.status).toBe('retry_requested');
+      await expect(script.error(params, mockContext)).rejects.toThrow(errorObj);
     });
 
-    test('should request retry for server errors (504)', async () => {
+    test('should re-throw any error', async () => {
+      const errorObj = new Error('Some other network error');
       const params = {
-        error: {
-          message: 'Failed to disable user: 504 Gateway Timeout'
-        }
+        userPrincipalName: 'test@example.com',
+        error: errorObj
       };
 
-      const result = await script.error(params, mockContext);
-
-      expect(result.status).toBe('retry_requested');
-    });
-
-    test('should throw fatal error for authentication errors (401)', async () => {
-      const params = {
-        error: {
-          message: 'Failed to disable user: 401 Unauthorized'
-        }
-      };
-
-      await expect(script.error(params, mockContext))
-        .rejects
-        .toThrow('Failed to disable user: 401 Unauthorized');
-    });
-
-    test('should throw fatal error for authorization errors (403)', async () => {
-      const params = {
-        error: {
-          message: 'Failed to disable user: 403 Forbidden'
-        }
-      };
-
-      await expect(script.error(params, mockContext))
-        .rejects
-        .toThrow('Failed to disable user: 403 Forbidden');
-    });
-
-    test('should request retry for other errors by default', async () => {
-      const params = {
-        error: {
-          message: 'Some other network error'
-        }
-      };
-
-      const result = await script.error(params, mockContext);
-
-      expect(result.status).toBe('retry_requested');
+      await expect(script.error(params, mockContext)).rejects.toThrow(errorObj);
     });
   });
 
