@@ -94,30 +94,19 @@ export default {
   },
 
   /**
-   * Error recovery handler - handles retryable errors
+   * Error recovery handler - framework handles retries by default
+   * Only implement if custom recovery logic is needed
    * @param {Object} params - Original params plus error information
    * @param {Object} context - Execution context
    * @returns {Object} Recovery results
    */
   error: async (params, _context) => {
-    const { error } = params;
+    const { error, userPrincipalName } = params;
+    console.error(`User disable failed for ${userPrincipalName}: ${error.message}`);
 
-    // Check for rate limiting (429) or temporary server errors (502, 503, 504)
-    if (error.message.includes('429') ||
-        error.message.includes('502') ||
-        error.message.includes('503') ||
-        error.message.includes('504')) {
-      console.log('Retryable error detected, requesting retry...');
-      return { status: 'retry_requested' };
-    }
-
-    // Fatal errors (401, 403) should not retry
-    if (error.message.includes('401') || error.message.includes('403')) {
-      throw new Error(error.message); // Re-throw to mark as fatal
-    }
-
-    // Default: let framework retry
-    return { status: 'retry_requested' };
+    // Framework handles retries for transient errors (429, 502, 503, 504)
+    // Just re-throw the error to let the framework handle it
+    throw error;
   },
 
   /**
