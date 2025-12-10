@@ -5,7 +5,7 @@
  * This prevents the user from signing in and accessing resources.
  */
 
-import { getBaseUrl, createAuthHeaders } from '@sgnl-actions/utils';
+import { getBaseURL, createAuthHeaders, resolveJSONPathTemplates} from '@sgnl-actions/utils';
 
 /**
  * Helper function to disable a user account
@@ -52,20 +52,28 @@ export default {
    * @returns {Object} Job results
    */
   invoke: async (params, context) => {
+    const jobContext = context.data || {};
+
+    // Resolve JSONPath templates in params
+    const { result: resolvedParams, errors } = resolveJSONPathTemplates(params, jobContext);
+    if (errors.length > 0) {
+      throw new Error(`Failed to resolve template values: ${errors.join(', ')}`);
+    }
+
     // Validate required parameters
-    if (!params.userPrincipalName) {
+    if (!resolvedParams.userPrincipalName) {
       throw new Error('userPrincipalName is required');
     }
 
     // Get base URL and authentication headers using utilities
-    const baseUrl = getBaseUrl(params, context);
+    const baseUrl = getBaseURL(resolvedParams, context);
     const headers = await createAuthHeaders(context);
 
-    console.log(`Disabling user account: ${params.userPrincipalName}`);
+    console.log(`Disabling user account: ${resolvedParams.userPrincipalName}`);
 
     // Call Azure AD API to disable the account
     const response = await disableUserAccount(
-      params.userPrincipalName,
+      resolvedParams.userPrincipalName,
       baseUrl,
       headers
     );
@@ -84,11 +92,11 @@ export default {
       accountEnabled = result.accountEnabled ?? false;
     }
 
-    console.log(`Successfully disabled user account: ${params.userPrincipalName}`);
+    console.log(`Successfully disabled user account: ${resolvedParams.userPrincipalName}`);
 
     return {
       status: 'success',
-      userPrincipalName: params.userPrincipalName,
+      userPrincipalName: resolvedParams.userPrincipalName,
       accountEnabled: accountEnabled
     };
   },
