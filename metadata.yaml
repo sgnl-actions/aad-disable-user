@@ -11,17 +11,13 @@ inputs:
       min: 1
       max: 255
 
-# Secrets required from context
-secrets:
-  AZURE_AD_TOKEN:
-    description: Azure AD access token with User.ReadWrite.All permission
-    required: true
-
-# Environment variables
-environment:
-  AZURE_AD_TENANT_URL:
-    description: Azure AD tenant URL (e.g., https://graph.microsoft.com/v1.0)
-    default: https://graph.microsoft.com/v1.0
+  address:
+    type: text
+    description: Optional Azure AD API base URL override
+    required: false
+    validation:
+      min: 1
+      max: 100
 
 # Expected output structure
 outputs:
@@ -36,3 +32,7 @@ outputs:
   accountEnabled:
     type: boolean
     description: The account enabled status (should be false)
+
+  address:
+    type: text
+    description: The Azure AD API base URL used
