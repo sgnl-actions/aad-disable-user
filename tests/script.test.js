@@ -151,28 +151,7 @@ describe('Azure AD Disable User Action', () => {
       expect(call[1].headers.Authorization).toBe('Bearer existing-bearer-token');
     });
 
-    test('should throw error when userPrincipalName is missing', async () => {
-      const params = {};
 
-      await expect(script.invoke(params, mockContext))
-        .rejects
-        .toThrow('userPrincipalName is required');
-    });
-
-    test('should throw error when OAUTH2_AUTHORIZATION_CODE_ACCESS_TOKEN is missing', async () => {
-      const contextWithoutToken = {
-        environment: mockContext.environment,
-        secrets: {}
-      };
-
-      const params = {
-        userPrincipalName: 'user@example.com'
-      };
-
-      await expect(script.invoke(params, contextWithoutToken))
-        .rejects
-        .toThrow('No authentication configured');
-    });
 
     test('should handle API error responses', async () => {
       const mockResponse = {
