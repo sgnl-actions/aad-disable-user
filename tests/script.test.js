@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import script from '../src/script.mjs';
+import { SGNL_USER_AGENT } from '@sgnl-actions/utils';
 
 // Mock fetch for all tests
 const mockFetch = jest.fn();
@@ -49,7 +50,8 @@ describe('Azure AD Disable User Action', () => {
           headers: {
             'Authorization': 'Bearer test-access-token-12345',
             'Accept': 'application/json',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            "User-Agent": SGNL_USER_AGENT
           },
           body: JSON.stringify({
             accountEnabled: false
