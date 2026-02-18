@@ -5,7 +5,7 @@
  * This prevents the user from signing in and accessing resources.
  */
 
-import { getBaseURL, createAuthHeaders} from '@sgnl-actions/utils';
+import { getBaseURL, createAuthHeaders } from '@sgnl-actions/utils';
 
 /**
  * Helper function to disable a user account

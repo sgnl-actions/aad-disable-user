@@ -51,7 +51,7 @@ describe('Azure AD Disable User Action', () => {
             'Authorization': 'Bearer test-access-token-12345',
             'Accept': 'application/json',
             'Content-Type': 'application/json',
-            "User-Agent": SGNL_USER_AGENT
+            'User-Agent': SGNL_USER_AGENT
           },
           body: JSON.stringify({
             accountEnabled: false
