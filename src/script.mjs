@@ -5,7 +5,7 @@
  * This prevents the user from signing in and accessing resources.
  */
 
-import { getBaseURL, createAuthHeaders} from '@sgnl-actions/utils';
+import { getBaseURL, createAuthHeaders } from '@sgnl-actions/utils';
 
 /**
  * Helper function to disable a user account
@@ -56,6 +56,10 @@ export default {
     // Get base URL and authentication headers using utilities
     const baseUrl = getBaseURL(params, context);
     const headers = await createAuthHeaders(context);
+
+    if (!params.userPrincipalName || typeof params.userPrincipalName !== 'string' || !params.userPrincipalName.trim()) {
+      throw new Error('userPrincipalName parameter is required and cannot be empty');
+    }
 
     console.log(`Disabling user account: ${params.userPrincipalName}`);
 

@@ -51,7 +51,7 @@ describe('Azure AD Disable User Action', () => {
             'Authorization': 'Bearer test-access-token-12345',
             'Accept': 'application/json',
             'Content-Type': 'application/json',
-            "User-Agent": SGNL_USER_AGENT
+            'User-Agent': SGNL_USER_AGENT
           },
           body: JSON.stringify({
             accountEnabled: false
@@ -303,6 +303,177 @@ describe('Azure AD Disable User Action', () => {
 
       expect(result.status).toBe('halted');
       expect(result.userPrincipalName).toBe('user@example.com');
+      expect(result.reason).toBeUndefined();
+    });
+  });
+
+  describe('invoke handler - idempotency', () => {
+    test('should succeed on first call', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204, statusText: 'No Content' });
+
+      const result = await script.invoke({ userPrincipalName: 'user@example.com' }, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(result.accountEnabled).toBe(false);
+    });
+
+    test('should succeed on second call when user already disabled', async () => {
+      // PATCH accountEnabled:false on already-disabled user returns same 204
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204, statusText: 'No Content' });
+
+      const result = await script.invoke({ userPrincipalName: 'user@example.com' }, mockContext);
+
+      expect(result.status).toBe('success');
+      expect(result.accountEnabled).toBe(false);
+    });
+
+    test('should produce same result on repeated calls', async () => {
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, status: 204, statusText: 'No Content' })
+        .mockResolvedValueOnce({ ok: true, status: 204, statusText: 'No Content' });
+
+      const r1 = await script.invoke({ userPrincipalName: 'user@example.com' }, mockContext);
+      const r2 = await script.invoke({ userPrincipalName: 'user@example.com' }, mockContext);
+
+      expect(r1.status).toBe('success');
+      expect(r2.status).toBe('success');
+      expect(r1.accountEnabled).toBe(r2.accountEnabled);
+      expect(r1.userPrincipalName).toBe(r2.userPrincipalName);
+    });
+  });
+
+  describe('invoke handler - input validation', () => {
+    test('should throw when userPrincipalName is missing', async () => {
+      await expect(script.invoke({}, mockContext)).rejects.toThrow();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    test('should throw when auth token is missing', async () => {
+      await expect(script.invoke(
+        { userPrincipalName: 'user@example.com' },
+        { environment: { ADDRESS: 'https://graph.microsoft.com' }, secrets: {} }
+      )).rejects.toThrow(/No authentication configured/);
+
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('invoke handler - request construction', () => {
+    test('should use PATCH method', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await script.invoke({ userPrincipalName: 'user@example.com' }, mockContext);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ method: 'PATCH' })
+      );
+    });
+
+    test('should set accountEnabled to false in request body', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await script.invoke({ userPrincipalName: 'user@example.com' }, mockContext);
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.accountEnabled).toBe(false);
+    });
+
+    test('should include User-Agent header', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await script.invoke({ userPrincipalName: 'user@example.com' }, mockContext);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'User-Agent': SGNL_USER_AGENT })
+        })
+      );
+    });
+
+    test('should use custom address from params over environment ADDRESS', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+
+      await script.invoke({
+        userPrincipalName: 'user@example.com',
+        address: 'https://custom-proxy.example.com'
+      }, mockContext);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('https://custom-proxy.example.com'),
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe('invoke handler - network failures', () => {
+    test('should throw when fetch rejects', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network timeout'));
+
+      await expect(script.invoke(
+        { userPrincipalName: 'user@example.com' },
+        mockContext
+      )).rejects.toThrow('Network timeout');
+    });
+  });
+
+  describe('invoke handler - error responses', () => {
+    test('should throw on 401 Unauthorized', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false, status: 401, statusText: 'Unauthorized',
+        text: jest.fn().mockResolvedValue('{"error":{"code":"InvalidAuthenticationToken"}}')
+      });
+
+      await expect(script.invoke(
+        { userPrincipalName: 'user@example.com' },
+        mockContext
+      )).rejects.toThrow(/401 Unauthorized/);
+    });
+
+    test('should throw on 403 Forbidden', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false, status: 403, statusText: 'Forbidden',
+        text: jest.fn().mockResolvedValue('{"error":{"code":"Authorization_RequestDenied"}}')
+      });
+
+      await expect(script.invoke(
+        { userPrincipalName: 'user@example.com' },
+        mockContext
+      )).rejects.toThrow(/403 Forbidden/);
+    });
+
+    test('should throw on 404 Not Found', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false, status: 404, statusText: 'Not Found',
+        text: jest.fn().mockResolvedValue('{"error":{"code":"Request_ResourceNotFound"}}')
+      });
+
+      await expect(script.invoke(
+        { userPrincipalName: 'user@example.com' },
+        mockContext
+      )).rejects.toThrow(/404 Not Found/);
+    });
+
+    test('should throw on 429 Too Many Requests', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false, status: 429, statusText: 'Too Many Requests',
+        text: jest.fn().mockResolvedValue('{"error":{"code":"TooManyRequests"}}')
+      });
+
+      await expect(script.invoke(
+        { userPrincipalName: 'user@example.com' },
+        mockContext
+      )).rejects.toThrow(/429/);
+    });
+  });
+
+  describe('halt handler - edge cases', () => {
+    test('should handle halt with no params at all', async () => {
+      const result = await script.halt({}, mockContext);
+
+      expect(result.status).toBe('halted');
+      expect(result.userPrincipalName).toBe('unknown');
       expect(result.reason).toBeUndefined();
     });
   });
