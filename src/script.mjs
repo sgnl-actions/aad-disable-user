@@ -57,6 +57,10 @@ export default {
     const baseUrl = getBaseURL(params, context);
     const headers = await createHeaders(context);
 
+    if (!params.userPrincipalName || typeof params.userPrincipalName !== 'string' || !params.userPrincipalName.trim()) {
+      throw new Error('userPrincipalName parameter is required and cannot be empty');
+    }
+
     console.log(`Disabling user account: ${params.userPrincipalName}`);
 
     // Call Azure AD API to disable the account
